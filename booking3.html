@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ukebooking</title>
+<style>
+  body { font-family: sans-serif; margin:0; padding:0; background:#f7f7f8; }
+  .week { display:grid; grid-template-columns: 60px repeat(7,1fr); gap:1px; background:#ccc; }
+  .cell { background:#fff; min-height:50px; display:flex; justify-content:center; align-items:center; font-size:12px; cursor:pointer; flex-direction:column; }
+  .header { background:#2b8cff; color:#fff; font-weight:600; text-align:center; }
+  .time-label { background:#eee; }
+  .booked { background:#2b8cff; color:#fff; font-size:10px; padding:2px 4px; border-radius:4px; text-align:center; }
+  .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.5); display:flex; justify-content:center; align-items:center; z-index:1000; }
+  .modal { background:#fff; padding:16px; border-radius:10px; width:90%; max-width:300px; }
+  .modal input { width:100%; padding:8px; margin-top:8px; margin-bottom:12px; }
+  .modal button { padding:8px 12px; margin-right:8px; border:none; border-radius:6px; cursor:pointer; }
+  .modal .book { background:#2b8cff; color:#fff; }
+</style>
+</head>
+<body>
+
+<h2 style="text-align:center; padding:16px;">Ukebooking</h2>
+<div id="calendar" class="week"></div>
+
+<div id="modalRoot" style="display:none;"></div>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
+<script>
+  // Firebase config
+  const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "SENDER_ID",
+    appId: "YOUR_APP_ID"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  const hours = Array.from({length:18},(_,i)=>i+6); // 06-23
+  const weekdays = ['Man','Tir','Ons','Tor','Fre','Lør','Søn'];
+  const calendar = document.getElementById('calendar');
+
+  function startOfWeek(d=new Date()){
+    const day = d.getDay(); // 0=Sun
+    const diff = (day===0? -6: 1-day);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()+diff);
+  }
+
+  let weekStart = startOfWeek();
+
+  function renderCalendar(bookings={}){
+    calendar.innerHTML='';
+    calendar.appendChild(document.createElement('div')).className='cell time-label'; // empty top-left
+    weekdays.forEach(w=>{
+      const div=document.createElement('div');
+      div.className='cell header';
+      div.textContent=w;
+      calendar.appendChild(div);
+    });
+
+    hours.forEach(hour=>{
+      const hourDiv=document.createElement('div');
+      hourDiv.className='cell time-label';
+      hourDiv.textContent=(hour<10?'0':'')+hour+':00';
+      calendar.appendChild(hourDiv);
+
+      weekdays.forEach((_,i)=>{
+        const date = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate()+i);
+        const iso = date.toISOString().split('T')[0];
+        const key = iso+'-'+hour;
+        const cell = document.createElement('div');
+        cell.className='cell';
+        if(bookings[key]) cell.innerHTML='<div class="booked">'+bookings[key]+'</div>';
+        cell.addEventListener('click',()=>openModal(iso,hour));
+        calendar.appendChild(cell);
+      });
+    });
+  }
+
+  function openModal(date,hour){
+    const modalRoot = document.getElementById('modalRoot');
+    modalRoot.style.display='flex';
+    modalRoot.innerHTML = `
+      <div class="modal-backdrop">
+        <div class="modal">
+          <h3>Book ${date} - ${hour}:00</h3>
+          <input type="text" id="name" placeholder="Ditt navn" />
+          <button class="book">Book</button>
+          <button id="cancelBtn">Avbryt</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('cancelBtn').addEventListener('click',()=>modalRoot.style.display='none');
+    modalRoot.querySelector('.book').addEventListener('click',async()=>{
+      const name = document.getElementById('name').value.trim();
+      if(!name){ alert('Skriv inn navnet ditt'); return; }
+
+      const docRef = db.collection('bookinger').doc(date+'_'+hour);
+      const doc = await docRef.get();
+      if(doc.exists){ alert('Tiden er allerede booket'); return; }
+
+      await docRef.set({name,date,hour});
+      modalRoot.style.display='none';
+      alert('Booking bekreftet!');
+      loadBookings();
+    });
+  }
+
+  async function loadBookings(){
+    const snapshot = await db.collection('bookinger').get();
+    const data = {};
+    snapshot.forEach(doc=>{
+      const d = doc.data();
+      data[d.date+'-'+d.hour] = d.name;
+    });
+    renderCalendar(data);
+  }
+
+  loadBookings();
+</script>
+</body>
+</html>
